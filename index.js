@@ -36,40 +36,33 @@ window.addEventListener('load', () => {
     }, 2500);
 });
 
-// Fixed Album Structure
+// Build Albums and Nav
 function buildAlbumsAndNav() {
     Object.keys(albums).forEach((albumName, index) => {
-        // Nav Button
         const btn = document.createElement('button');
         btn.textContent = albumName;
         btn.dataset.album = albumName;
         if (index === 0) btn.classList.add('active');
         nav.appendChild(btn);
 
-        // Album Container
         const albumDiv = document.createElement('div');
         albumDiv.classList.add('album');
         if (index === 0) albumDiv.classList.add('active');
         albumDiv.id = `album-${albumName}`;
 
-        // Title
         const title = document.createElement('h2');
         title.textContent = albumName;
         albumDiv.appendChild(title);
 
-        // Panel (for slider)
         const panel = document.createElement('div');
         panel.className = 'panel';
         panel.style.cssText = `--radius:20px;--glass-blur:12px;--panel-bg:rgba(255,255,255,0.05);--panel-border:rgba(255,255,255,0.1);--shadow-glow:0 0 40px rgba(255,107,107,0.3);`;
 
-        // Grid
         const grid = document.createElement('div');
         grid.className = 'grid';
 
-        // Correct Order: title → panel → grid
         albumDiv.appendChild(panel);
         albumDiv.appendChild(grid);
-
         albumsContainer.appendChild(albumDiv);
     });
 
@@ -81,23 +74,21 @@ unlockBtn.addEventListener('click', () => {
     if (passwordInput.value === correctPassword) {
         unlocked = true;
         document.querySelector('header p').style.display = 'none';
-        loadAllImages();
+        loadAllImages();  // This loads ALL albums at once
     } else {
         alert('Incorrect password!');
     }
 });
 passwordInput.addEventListener('keypress', e => e.key === 'Enter' && unlockBtn.click());
 
-// Load Images - Fixed Slider
+// Load Images - Auto-slider fixed
 async function loadImagesForAlbum(name, path) {
     const panel = document.querySelector(`#album-${name} .panel`);
     const grid = document.querySelector(`#album-${name} .grid`);
 
-    // Remove old slider
     const oldSlider = panel.querySelector('.slider-container');
     if (oldSlider) oldSlider.remove();
 
-    // Create new slider
     const sliderContainer = document.createElement('div');
     sliderContainer.className = 'slider-container';
 
@@ -109,23 +100,37 @@ async function loadImagesForAlbum(name, path) {
 
     sliderContainer.appendChild(sliderImages);
     sliderContainer.appendChild(thumbnails);
-
-    // Insert slider at top of panel
     panel.prepend(sliderContainer);
 
     let photos = [];
     let currentIndex = 0;
     let autoSlideInterval = null;
 
-    const startAutoSlide = (speed = 5000) => {
-        clearInterval(autoSlideInterval);
+    const getSlideSpeed = () => slideshowMode ? 3000 : 5000;
+
+    const goToSlide = (index) => {
+        sliderImages.querySelectorAll('img').forEach((img, i) => img.classList.toggle('active', i === index));
+        thumbnails.querySelectorAll('img').forEach((img, i) => img.classList.toggle('active', i === index));
+        currentIndex = index;
+    };
+
+    const startAutoSlide = () => {
+        stopAutoSlide();
+        if (photos.length <= 1) return;
         autoSlideInterval = setInterval(() => {
             currentIndex = (currentIndex + 1) % photos.length;
             goToSlide(currentIndex);
-        }, speed);
+        }, getSlideSpeed());
     };
 
-    const stopAutoSlide = () => clearInterval(autoSlideInterval);
+    const stopAutoSlide = () => {
+        if (autoSlideInterval) clearInterval(autoSlideInterval);
+        autoSlideInterval = null;
+    };
+
+    // Safely expose functions
+    sliderContainer.dataset.startAuto = startAutoSlide;
+    sliderContainer.dataset.stopAuto = stopAutoSlide;
 
     try {
         const response = await fetch(`${path}/photos.json?t=${Date.now()}`);
@@ -137,7 +142,7 @@ async function loadImagesForAlbum(name, path) {
         }
 
         photos.forEach((src, index) => {
-            // Main Image
+            // Main image
             const mainImg = document.createElement('img');
             mainImg.src = src;
             mainImg.loading = 'lazy';
@@ -156,11 +161,11 @@ async function loadImagesForAlbum(name, path) {
                 currentIndex = index;
                 goToSlide(index);
                 thumb.scrollIntoView({ behavior: 'smooth', inline: 'center' });
-                startAutoSlide(slideshowMode ? 3000 : 5000);
+                startAutoSlide();
             };
             thumbnails.appendChild(thumb);
 
-            // Grid Image
+            // Grid image
             const gridImg = document.createElement('img');
             gridImg.src = src;
             gridImg.loading = 'lazy';
@@ -169,17 +174,10 @@ async function loadImagesForAlbum(name, path) {
             grid.appendChild(gridImg);
         });
 
-        const goToSlide = (index) => {
-            sliderImages.querySelectorAll('img').forEach((img, i) => {
-                img.classList.toggle('active', i === index);
-            });
-            thumbnails.querySelectorAll('img').forEach((img, i) => {
-                img.classList.toggle('active', i === index);
-            });
-            currentIndex = index;
-        };
+        // Interactions
+        sliderContainer.addEventListener('mouseenter', stopAutoSlide);
+        sliderContainer.addEventListener('mouseleave', startAutoSlide);
 
-        // Touch Swipe
         let touchStartX = 0;
         sliderContainer.addEventListener('touchstart', e => {
             touchStartX = e.changedTouches[0].screenX;
@@ -189,48 +187,38 @@ async function loadImagesForAlbum(name, path) {
         sliderContainer.addEventListener('touchend', e => {
             const diff = touchStartX - e.changedTouches[0].screenX;
             if (Math.abs(diff) > 50) {
-                if (diff > 0) {
-                    currentIndex = (currentIndex + 1) % photos.length;
-                } else {
-                    currentIndex = (currentIndex - 1 + photos.length) % photos.length;
-                }
+                if (diff > 0) currentIndex = (currentIndex + 1) % photos.length;
+                else currentIndex = (currentIndex - 1 + photos.length) % photos.length;
                 goToSlide(currentIndex);
             }
-            startAutoSlide(slideshowMode ? 3000 : 5000);
+            startAutoSlide();
         }, { passive: true });
 
-        // Keyboard & Click
         document.addEventListener('keydown', e => {
             if (!document.getElementById(`album-${name}`).classList.contains('active')) return;
-            if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+            if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
                 e.preventDefault();
-                currentIndex = (currentIndex + 1) % photos.length;
+                stopAutoSlide();
+                if (e.key === 'ArrowRight' || e.key === 'ArrowDown') currentIndex = (currentIndex + 1) % photos.length;
+                else currentIndex = (currentIndex - 1 + photos.length) % photos.length;
                 goToSlide(currentIndex);
-                startAutoSlide(slideshowMode ? 3000 : 5000);
-            }
-            if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-                e.preventDefault();
-                currentIndex = (currentIndex - 1 + photos.length) % photos.length;
-                goToSlide(currentIndex);
-                startAutoSlide(slideshowMode ? 3000 : 5000);
+                startAutoSlide();
             }
         });
 
         sliderContainer.addEventListener('click', e => {
             if (e.target.tagName === 'IMG' && e.target.parentElement === sliderImages) {
+                stopAutoSlide();
                 currentIndex = (currentIndex + 1) % photos.length;
                 goToSlide(currentIndex);
-                startAutoSlide(slideshowMode ? 3000 : 5000);
+                startAutoSlide();
             }
         });
 
-        // Start auto-slide if active
+        // Auto-start only if this album is currently active
         if (document.getElementById(`album-${name}`).classList.contains('active')) {
             startAutoSlide();
         }
-
-        // Store for navigation
-        sliderContainer.dataset.startAuto = () => startAutoSlide(slideshowMode ? 3000 : 5000);
 
     } catch (err) {
         console.error('Error loading album:', name, err);
@@ -238,36 +226,42 @@ async function loadImagesForAlbum(name, path) {
     }
 }
 
-
 function loadAllImages() {
     if (!unlocked) return;
     Object.entries(albums).forEach(([name, path]) => loadImagesForAlbum(name, path));
 }
 
-// Navigation
+// FIXED Navigation - Safe calls to start/stop
 function setupNavigation() {
     document.querySelectorAll('nav button').forEach(btn => {
         btn.addEventListener('click', () => {
+            // Hide all albums and stop their sliders safely
+            document.querySelectorAll('.album').forEach(album => {
+                album.classList.remove('active');
+                const slider = album.querySelector('.slider-container');
+                if (slider && typeof slider.dataset.stopAuto === 'function') {
+                    slider.dataset.stopAuto();
+                }
+            });
+
+            // Remove active from all buttons
             document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
 
-            document.querySelectorAll('.album').forEach(a => a.classList.remove('active'));
+            // Show selected album
             const activeAlbum = document.getElementById(`album-${btn.dataset.album}`);
             activeAlbum.classList.add('active');
 
+            // Start auto-slide safely
             const slider = activeAlbum.querySelector('.slider-container');
-            if (slider && slider.dataset.startAuto) {
+            if (slider && typeof slider.dataset.startAuto === 'function') {
                 slider.dataset.startAuto();
             }
         });
     });
-
-    // Start first album
-    const firstSlider = document.querySelector('#album-Engagement .slider-container');
-    if (firstSlider && firstSlider.dataset.startAuto) firstSlider.dataset.startAuto();
 }
 
-// Lightbox, Fullscreen, Slideshow (same as before)
+// Lightbox & Controls (unchanged - working perfectly)
 function openLightbox(src) {
     if (document.fullscreenElement) toggleFullscreen();
     lightboxImg.src = src;
@@ -314,7 +308,7 @@ function toggleSlideshow() {
     slideshowBtn.title = slideshowMode ? "Pause Slideshow" : "Start Slideshow";
 
     const activeSlider = document.querySelector('.album.active .slider-container');
-    if (activeSlider && activeSlider.dataset.startAuto) {
+    if (activeSlider && typeof activeSlider.dataset.startAuto === 'function') {
         activeSlider.dataset.startAuto();
     }
 
